@@ -29,13 +29,15 @@ fn draw_board(alive_cells: &HashSet<Cell>, grid_size: &f32, x_shift: &f32, y_shi
             PURPLE,
         );
     }
+    let num_cells = (screen_width / cell_size) as isize + 1;
 
-    for x in (0 + *x_shift as isize)..((screen_width / cell_size) + 1. + *x_shift) as isize {
-        for y in (0 + *y_shift as isize)..((screen_height / cell_size) + 1. + *y_shift) as isize {
-            if alive_cells.contains(&(x, y)) {
+
+    for x in 0..num_cells {
+        for y in 0..num_cells {
+            if alive_cells.contains(&(x + *x_shift as isize, y + *y_shift as isize)) {
                 draw_rectangle(
-                    (x as f32 - *x_shift) * cell_size,
-                    (y as f32 - *y_shift) * cell_size,
+                    x as f32 * cell_size,
+                    y as f32 * cell_size,
                     cell_size,
                     cell_size,
                     WHITE,
@@ -58,19 +60,17 @@ fn mouse_keyboard_events(
         (mouse_x / cell_size) as isize + *x_shift as isize,
         (mouse_y / cell_size) as isize + *y_shift as isize,
     );
+    let movements = [(KeyCode::Left, -1., 0.), (KeyCode::Right, 1., 0.), (KeyCode::Up, 0., -1.), (KeyCode::Down, 0., 1.)];
+ 
 
-    if is_key_down(KeyCode::Left) {
-        *x_shift += 1.0;
+    for (key, dx, dy) in &movements {
+        if is_key_down(*key) {
+            *x_shift += dx;
+            *y_shift += dy;
+        }
     }
-    if is_key_down(KeyCode::Right) {
-        *x_shift -= 1.0;
-    }
-    if is_key_down(KeyCode::Up) {
-        *y_shift += 1.0;
-    }
-    if is_key_down(KeyCode::Down) {
-        *y_shift -= 1.0;
-    }
+    
+
     if is_mouse_button_down(MouseButton::Left) {
         alive_cells.insert(cell);
     } else if is_mouse_button_down(MouseButton::Right) {
@@ -78,10 +78,7 @@ fn mouse_keyboard_events(
     }
 
     if is_key_released(KeyCode::Space) {
-        match &game_state {
-            &GameState::Placing => *game_state = GameState::Playing,
-            &GameState::Playing => *game_state = GameState::Placing,
-        }
+        game_state.toggle();
     }
 
     if is_key_down(KeyCode::LeftControl) {
@@ -104,26 +101,33 @@ enum GameState {
     Playing,
 }
 
-fn number_of_neighbors(alive_cells: &HashSet<Cell>, cell: &Cell) -> i32 {
-    let (x, y) = cell;
-    let mut neighbors = 0;
-    for (x_offset, y_offset) in [
-        (-1, -1),
-        (-1, 0),
-        (-1, 1),
-        (0, -1),
-        (0, 1),
-        (1, -1),
-        (1, 0),
-        (1, 1),
-    ]
-    .iter()
-    {
-        let neighbor_cell = ((*x as isize + x_offset), (*y as isize + y_offset));
-        if alive_cells.contains(&neighbor_cell) {
-            neighbors += 1;
+impl GameState {
+    fn toggle(&mut self) {
+        match self {
+            GameState::Placing => *self = GameState::Playing,
+            GameState::Playing => *self = GameState::Placing,
         }
     }
+}
+
+fn number_of_neighbors(alive_cells: &HashSet<Cell>, cell: &Cell) -> i32 {
+    let (x_cell, y_cell) = *cell;
+    let mut neighbors = 0;
+
+
+    for x in -1..=1 {
+        for y in -1..=1 {
+            // Don't count the cell as one of it's own neighboors
+            if (x, y) == (0, 0) {
+                continue;
+            }
+            let neighbor_cell = ((x_cell + x), (y_cell + y));
+            if alive_cells.contains(&neighbor_cell) {
+                neighbors += 1;
+            }
+        }
+    }
+
     neighbors
 }
 
@@ -136,20 +140,16 @@ fn tick(alive_cells: &mut HashSet<Cell>) {
         if neighbors < 2 || neighbors > 3 {
             cells_to_kill.insert(cell.clone());
         }
-        for (x, y) in [
-            (-1, -1),
-            (-1, 0),
-            (-1, 1),
-            (0, -1),
-            (0, 1),
-            (1, -1),
-            (1, 0),
-            (1, 1),
-        ]
-        .iter()
-        {
-            if !alive_cells.contains(&(cell.0 + x, cell.1 + y)) {
-                cells_to_check.insert((cell.0 + x, cell.1 + y));
+
+        for x in -1..=1 {
+            for y in -1..=1 {
+                // Don't count the cell as one of it's own neighboors
+                if (x, y) == (0, 0) {
+                    continue;
+                }
+                if !alive_cells.contains(&(cell.0 + x, cell.1 + y)) {
+                    cells_to_check.insert((cell.0 + x, cell.1 + y));
+                }
             }
         }
     }
@@ -186,6 +186,7 @@ async fn main() {
             &mut x_shift,
             &mut y_shift,
         );
+
         draw_board(&alive_cells, &grid_size, &x_shift, &y_shift);
         match game_state {
             GameState::Placing => {
@@ -208,6 +209,7 @@ async fn main() {
                 tick(&mut alive_cells);
             }
         }
+
         next_frame().await
     }
 }
